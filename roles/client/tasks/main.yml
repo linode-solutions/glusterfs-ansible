@@ -1,0 +1,135 @@
+# roles/client/tasks
+
+# general tasks
+- name: add client nodes to /etc/hosts
+  blockinfile:
+    path: /etc/hosts
+    marker: "# {mark} CLIENT HOSTS"
+    block: |
+      {{ client_priv_ip1}} {{ client1 }}
+      {{ client_priv_ip2}} {{ client2 }}
+      {{ client_priv_ip3}} {{ client3 }}
+
+- name: add gluster nodes to /etc/hosts
+  blockinfile:
+    path: /etc/hosts
+    marker: "# {mark} GLUSTERFS HOSTS"
+    block: |
+      {{ gluster_priv_ip1}} {{ gluster1 }}
+      {{ gluster_priv_ip2}} {{ gluster2 }}
+      {{ gluster_priv_ip3}} {{ gluster3 }}
+
+- name: set {{ client1 }} hostname
+  shell: hostnamectl set-hostname '{{ client1 }}'
+  run_once: true
+  delegate_to: "{{groups['client_servers'][0]}}"
+
+- name: set {{ client2 }} hostname
+  shell: hostnamectl set-hostname '{{ client2 }}'
+  run_once: true
+  delegate_to: "{{groups['client_servers'][1]}}"
+
+- name: set {{ client3 }} hostname
+  shell: hostnamectl set-hostname '{{ client3 }}'
+  run_once: true
+  delegate_to: "{{groups['client_servers'][2]}}"
+
+- name: install glusterfs
+  apt:
+    name: glusterfs-server
+    state: latest
+
+- name: copy tls files to {{ client1 }}
+  copy:
+    src: roles/tls/files/{{ item.src }}
+    dest: /etc/ssl/{{ item.dest }}
+    owner: gluster
+    group: gluster
+    mode: '0660'
+  run_once: true
+  delegate_to: "{{groups['client_servers'][0]}}"
+  loop: 
+    - { src: 'cert/{{ client1 }}.pem', dest: glusterfs.pem }
+    - { src: 'key/{{ client1 }}.key', dest: glusterfs.key }
+    - { src: 'csr/{{ client1 }}.csr', dest: glusterfs.csr }
+
+- name: copy tls files to {{ client2 }}
+  copy:
+    src: roles/tls/files/{{ item.src }}
+    dest: /etc/ssl/{{ item.dest }}
+    owner: gluster
+    group: gluster
+    mode: '0660'
+  run_once: true
+  delegate_to: "{{groups['client_servers'][1]}}"
+  loop: 
+    - { src: 'cert/{{ client2 }}.pem', dest: glusterfs.pem }
+    - { src: 'key/{{ client2 }}.key', dest: glusterfs.key }
+    - { src: 'csr/{{ client2 }}.csr', dest: glusterfs.csr }
+
+- name: copy tls files to {{ client3 }}
+  copy:
+    src: roles/tls/files/{{ item.src }}
+    dest: /etc/ssl/{{ item.dest }}
+    owner: gluster
+    group: gluster
+    mode: '0660'
+  run_once: true
+  delegate_to: "{{groups['client_servers'][2]}}"
+  loop: 
+    - { src: 'cert/{{ client3 }}.pem', dest: glusterfs.pem }
+    - { src: 'key/{{ client3 }}.key', dest: glusterfs.key }
+    - { src: 'csr/{{ client3 }}.csr', dest: glusterfs.csr }
+
+- name: copy gusterfs.ca
+  copy:
+    src: roles/tls/files/ca/glusterfs.ca
+    dest: /etc/ssl/glusterfs.ca
+    owner: gluster
+    group: gluster
+    mode: '0660'
+
+- name: copy dhparams.pem 
+  copy:
+    src: roles/tls/files/dh/dhparams.pem
+    dest: /etc/ssl/dhparams.pem
+    mode: '0644'
+
+# set up glusterfs native client
+- name: enable management encryption
+  file:
+    path: /var/lib/glusterd/secure-access
+    state: touch
+  notify: restart glusterd
+
+- name: create data directory
+  file:
+    path: /srv/www
+    state: directory
+    mode: '0755'
+
+- name: mount gluster volume
+  mount:
+    path: /srv/www
+    src: gluster1:/data-volume
+    fstype: glusterfs
+    opts: defaults,_netdev,backup-volfile-servers=gluster2:gluster3
+    state: mounted
+
+# set up firewall
+- name: install firewalld
+  apt:
+    name: firewalld
+    state: latest
+
+- name: update firewalld.conf
+  lineinfile:
+    path: /etc/firewalld/firewalld.conf
+    regexp: '^IndividualCalls=no'
+    line: IndividualCalls=yes
+
+- name: configure client firewall
+  template:
+    src: client-firewalld-public.j2
+    dest: /etc/firewalld/zones/public.xml
+  notify: restart firewalld

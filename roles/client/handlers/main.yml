@@ -1,0 +1,12 @@
+# roles/client/handlers
+
+- name: restart glusterd
+  systemd:
+    name: glusterd
+    state: restarted
+
+- name: restart firewalld
+  systemd:
+    name: firewalld
+    state: restarted
+    enabled: yes

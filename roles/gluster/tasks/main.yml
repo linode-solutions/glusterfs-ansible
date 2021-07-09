@@ -1,0 +1,183 @@
+# roles/gluster/tasks
+
+# general tasks
+- name: update /etc/hosts
+  blockinfile:
+    path: /etc/hosts
+    marker: "# {mark} GLUSTERFS HOSTS"
+    block: |
+      {{ gluster_priv_ip1}} {{ gluster1 }}
+      {{ gluster_priv_ip2}} {{ gluster2 }}
+      {{ gluster_priv_ip3}} {{ gluster3 }}
+
+- name: set gluster1 hostname
+  shell: hostnamectl set-hostname '{{ gluster1 }}'
+  run_once: true
+  delegate_to: "{{groups['gluster_servers'][0]}}"
+
+- name: set gluster2 hostname
+  shell: hostnamectl set-hostname '{{ gluster2 }}'
+  run_once: true
+  delegate_to: "{{groups['gluster_servers'][1]}}"
+
+- name: set gluster3 hostname
+  shell: hostnamectl set-hostname '{{ gluster3 }}'
+  run_once: true
+  delegate_to: "{{groups['gluster_servers'][2]}}"
+
+- name: install glusterfs
+  apt:
+    name: glusterfs-server
+    state: latest
+
+- name: copy tls files to {{ gluster1 }}
+  copy:
+    src: roles/tls/files/{{ item.src }}
+    dest: /etc/ssl/{{ item.dest }}
+    owner: gluster
+    group: gluster
+    mode: '0660'
+  run_once: true
+  delegate_to: "{{groups['gluster_servers'][0]}}"
+  loop: 
+    - { src: 'cert/{{ gluster1 }}.pem', dest: glusterfs.pem }
+    - { src: 'key/{{ gluster1 }}.key', dest: glusterfs.key }
+    - { src: 'csr/{{ gluster1 }}.csr', dest: glusterfs.csr }
+
+- name: copy tls files to {{ gluster2 }}
+  copy:
+    src: roles/tls/files/{{ item.src }}
+    dest: /etc/ssl/{{ item.dest }}
+    owner: gluster
+    group: gluster
+    mode: '0660'
+  run_once: true
+  delegate_to: "{{groups['gluster_servers'][1]}}"
+  loop: 
+    - { src: 'cert/{{ gluster2 }}.pem', dest: glusterfs.pem }
+    - { src: 'key/{{ gluster2 }}.key', dest: glusterfs.key }
+    - { src: 'csr/{{ gluster2 }}.csr', dest: glusterfs.csr }
+
+- name: copy tls files to {{ gluster3 }}
+  copy:
+    src: roles/tls/files/{{ item.src }}
+    dest: /etc/ssl/{{ item.dest }}
+    owner: gluster
+    group: gluster
+    mode: '0660'
+  run_once: true
+  delegate_to: "{{groups['gluster_servers'][2]}}"
+  loop: 
+    - { src: 'cert/{{ gluster3 }}.pem', dest: glusterfs.pem }
+    - { src: 'key/{{ gluster3 }}.key', dest: glusterfs.key }
+    - { src: 'csr/{{ gluster3 }}.csr', dest: glusterfs.csr }
+
+- name: copy gusterfs.ca
+  copy:
+    src: roles/tls/files/ca/glusterfs.ca
+    dest: /etc/ssl/glusterfs.ca
+    owner: gluster
+    group: gluster
+    mode: '0660'
+
+- name: copy dhparams.pem 
+  copy:
+    src: roles/tls/files/dh/dhparams.pem
+    dest: /etc/ssl/dhparams.pem
+    mode: '0644'
+
+# configure glusterfs
+- name: glusterd start
+  systemd:
+    name: glusterd
+    state: started
+    enabled: yes
+
+- name: ensure glusterd is in running state
+  systemd:
+    name: glusterd 
+    state: started
+  register: result
+  until: result.status.ActiveState == "active"
+  retries: 10
+  delay: 5
+
+- name: create trusted storage pool
+  gluster.gluster.gluster_peer:
+    state: present
+    nodes:
+      #- '{{ gluster1 }}'
+      - '{{ gluster2 }}'
+      - '{{ gluster3 }}'
+  run_once: true
+  delegate_to: "{{groups['gluster_servers'][0]}}"
+
+- name: create gluster volumes
+  gluster.gluster.gluster_volume:
+    state: present
+    name: data-volume
+    bricks: /data
+    replicas: 3
+    cluster:
+      - '{{ gluster1 }}'
+      - '{{ gluster2 }}'
+      - '{{ gluster3 }}'
+    options:
+      { transport.address-family: inet,
+        nfs.disable: 'on',
+        performance.cache-size: '1GB',
+        cluster.server-quorum-type: 'server',
+        features.cache-invalidation: 'on',
+        performance.stat-prefetch: 'on',
+        performance.io-thread-count: '50',
+        cluster.lookup-optimize: 'on',
+        performance.cache-swift-metadata: 'on',
+        network.inode-lru-limit: '500000',
+        cluster.readdir-optimize: 'on',
+        client.event-threads: '8',
+        server.event-threads: '8',
+        performance.client-io-threads: 'on',
+        performance.quick-read: 'on',
+        performance.read-ahead: 'on',
+        performance.md-cache-timeout: '60',
+        performance.cache-refresh-timeout: '60',
+        auth.ssl-allow: '{{ gluster1 }},{{ gluster2 }},{{ gluster3 }},{{ client1 }},{{ client2 }},{{ client3 }}',
+        server.ssl: 'on',
+        client.ssl: 'on'
+      }
+    force: true
+  run_once: true
+  delegate_to: "{{groups['gluster_servers'][0]}}"
+
+- name: enable management encryption
+  file:
+    path: /var/lib/glusterd/secure-access
+    state: touch
+  notify: restart glusterd
+
+- name: configure quorum ratio
+  shell: gluster volume set all cluster.server-quorum-ratio 51%
+  retries: 3
+  delay: 1
+  register: result
+  until: result.rc == 0
+  notify: start gluster volume
+
+# set up firewall
+- name: install firewalld
+  apt:
+    name: firewalld
+    state: latest
+
+- name: update firewalld.conf
+  lineinfile:
+    path: /etc/firewalld/firewalld.conf
+    regexp: '^IndividualCalls=no'
+    line: IndividualCalls=yes
+
+- name: configure firewall
+  template:
+    src: gluster-firewalld-internal.j2
+    dest: /etc/firewalld/zones/internal.xml 
+  notify: restart firewalld
+

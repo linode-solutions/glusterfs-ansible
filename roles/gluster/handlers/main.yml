@@ -1,0 +1,19 @@
+# roles/gluster/handlers
+
+- name: restart glusterd
+  systemd:
+    name: glusterd
+    state: restarted
+
+- name: start gluster volume
+  gluster.gluster.gluster_volume:
+    state: started
+    name: data-volume
+
+- name: restart firewalld
+  systemd:
+    name: firewalld
+    state: restarted
+    enabled: yes
+
+

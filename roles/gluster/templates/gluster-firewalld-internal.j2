@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<zone>
+  <short>Internal</short>
+  <description>For use on internal networks. You mostly trust the other computers on the networks to not harm your computer. Only selected incoming connections are accepted.</description>
+  <service name="ssh"/>
+  <service name="mdns"/>
+  <service name="samba-client"/>
+  <service name="dhcpv6-client"/>
+  <service name="glusterfs"/>
+
+  <!-- {{ gluster1 }} -->
+  <source address="{{ gluster_priv_ip1 }}/32"/>
+
+  <!-- {{ gluster2 }} -->
+  <source address="{{ gluster_priv_ip2 }}/32"/>
+
+  <!-- {{ gluster3 }} -->
+  <source address="{{ gluster_priv_ip3 }}/32"/>
+
+  <!-- {{ client1 }} -->
+  <source address="{{ client_priv_ip1 }}/32"/>
+
+  <!-- {{ client2 }} -->
+  <source address="{{ client_priv_ip2 }}/32"/>
+
+  <!-- {{ client3 }} -->
+  <source address="{{ client_priv_ip3 }}/32"/>
+  
+</zone>

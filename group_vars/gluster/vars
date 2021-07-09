@@ -1,0 +1,9 @@
+ssh_keys:
+server_prefix: 
+client_prefix: 
+cluster_name:
+type: 
+region: 
+image: 
+group: 
+linode_tags:

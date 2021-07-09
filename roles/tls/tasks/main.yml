@@ -1,0 +1,59 @@
+# roles/tls/tasks
+
+# generate tls certificates for gluster and client nodes
+- name: generate dhparams.pem with the default size (4096 bits)
+  community.crypto.openssl_dhparam:
+    path: roles/tls/files/dh/dhparams.pem
+
+- name: generate private key
+  community.crypto.openssl_privatekey:
+   path: roles/tls/files/key/{{ item }}.key
+  loop:
+    - '{{ gluster1 }}'
+    - '{{ gluster2 }}'
+    - '{{ gluster3 }}'
+    - '{{ client1 }}'
+    - '{{ client2 }}'
+    - '{{ client3 }}'
+
+- name: generate csr
+  community.crypto.openssl_csr:
+    path: roles/tls/files/csr/{{ item }}.csr
+    privatekey_path: roles/tls/files/key/{{ item }}.key
+    common_name: '{{ item }}'
+  loop:
+    - '{{ gluster1 }}'
+    - '{{ gluster2 }}'
+    - '{{ gluster3 }}'
+    - '{{ client1 }}'
+    - '{{ client2 }}'
+    - '{{ client3 }}'
+
+- name: generate cert
+  community.crypto.x509_certificate:
+    path: roles/tls/files/cert/{{ item }}.pem
+    privatekey_path: roles/tls/files/key/{{ item }}.key
+    csr_path: roles/tls/files/csr/{{ item }}.csr
+    provider: selfsigned
+    subject:
+      commonName: '{{ item }}'
+    signature_algorithms:
+      - sha256WithRSAEncryption
+      - sha512WithRSAEncryption
+  loop:
+    - '{{ gluster1 }}'
+    - '{{ gluster2 }}'
+    - '{{ gluster3 }}'
+    - '{{ client1 }}'
+    - '{{ client2 }}'
+    - '{{ client3 }}'
+
+- name: generate ca
+  assemble:
+    src: roles/tls/files/cert/
+    dest: roles/tls/files/ca/glusterfs.ca
+  
+- name: generate client ca
+  assemble:
+    src: roles/tls/files/cert/
+    dest: roles/tls/files/ca/glusterfs-client.ca

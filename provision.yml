@@ -1,0 +1,169 @@
+# create gluster server and client linodes
+- name: create gluster linodes
+  hosts: localhost
+  vars_files:
+      - group_vars/gluster/vars
+      - group_vars/gluster/secret_vars
+  
+  vars:
+    count: 3
+
+  tasks:
+  - name: creating gluster servers
+    linode.cloud.instance:
+      label: '{{ server_prefix }}{{ item }}'
+      api_token: '{{ token }}'
+      type: '{{ type }}'
+      region: '{{ region }}'
+      image: '{{ image }}'
+      root_pass: '{{ root_pass }}'
+      authorized_keys: '{{ ssh_keys }}'
+      private_ip: true
+      group: '{{ group }}'
+      tags: '{{ linode_tags }}'
+      state: present
+    register: linode
+    with_sequence: count='{{count}}'
+
+  - name: creating gluster clients
+    linode.cloud.instance:
+      label: '{{ client_prefix }}{{ item }}'
+      api_token: '{{ token }}'
+      type: '{{ type }}'
+      region: '{{ region }}'
+      image: '{{ image }}'
+      root_pass: '{{ root_pass }}'
+      authorized_keys: '{{ ssh_keys }}'
+      private_ip: true
+      group: '{{ group }}'
+      tags: '{{ linode_tags }}'
+      state: present
+    register: linode
+    with_sequence: count='{{count}}'
+
+  - name: get info about servers by label
+    linode.cloud.instance_info:
+      api_token: '{{ token }}'
+      label: '{{ server_prefix }}{{ item }}'
+    register: info
+    with_sequence: count='{{count}}'
+
+  - name: set facts
+    set_fact:
+      # hostnames
+      gluster1: '{{ info.results.0.instance.label }}'
+      gluster2: '{{ info.results.1.instance.label }}'
+      gluster3: '{{ info.results.2.instance.label }}'
+      # public ips
+      gluster_ip1: '{{ info.results.0.instance.ipv4[0] }}'
+      gluster_ip2: '{{ info.results.1.instance.ipv4[0] }}'
+      gluster_ip3: '{{ info.results.2.instance.ipv4[0] }}'
+      # private ips
+      gluster_priv1: '{{ info.results.0.instance.ipv4[1] }}'
+      gluster_priv2: '{{ info.results.1.instance.ipv4[1] }}'
+      gluster_priv3: '{{ info.results.2.instance.ipv4[1] }}'
+
+  - name: Get info about clients by label
+    linode.cloud.instance_info:
+      api_token: '{{ token }}'
+      label: '{{ client_prefix }}{{ item }}'
+    register: info
+    with_sequence: count='{{count}}'
+
+  - name: set facts
+    set_fact:
+      # hostnames
+      client1: '{{ info.results.0.instance.label }}'
+      client2: '{{ info.results.1.instance.label }}'
+      client3: '{{ info.results.2.instance.label }}'
+      # public ips
+      client_ip1: '{{ info.results.0.instance.ipv4[0] }}'
+      client_ip2: '{{ info.results.1.instance.ipv4[0] }}'
+      client_ip3: '{{ info.results.2.instance.ipv4[0] }}'
+      # private ips
+      client_priv1: '{{ info.results.0.instance.ipv4[1] }}'
+      client_priv2: '{{ info.results.1.instance.ipv4[1] }}'
+      client_priv3: '{{ info.results.2.instance.ipv4[1] }}'
+  
+  - name: test connectivity
+    ping: '{{ item }}'
+    loop:
+      - '{{ gluster_ip1 }}'
+      - '{{ gluster_ip2 }}'
+      - '{{ gluster_ip3 }}'
+      - '{{ client_ip1 }}'
+      - '{{ client_ip2 }}'
+      - '{{ client_ip3 }}'
+
+  - name: update group_vars
+    blockinfile:
+      path: ./group_vars/gluster/vars
+      marker: "# {mark} INSTANCE VARS"
+      block: |
+        # hostnames 
+        gluster1: {{ gluster1 }}
+        gluster2: {{ gluster2 }}
+        gluster3: {{ gluster3 }}
+        client1: {{ client1 }}
+        client2: {{ client2 }}
+        client3: {{ client3 }}
+        # private ips
+        gluster_priv_ip1: {{ gluster_priv1 }}
+        gluster_priv_ip2: {{ gluster_priv2 }}
+        gluster_priv_ip3: {{ gluster_priv3 }}
+        client_priv_ip1: {{ client_priv1 }}
+        client_priv_ip2: {{ client_priv2 }}
+        client_priv_ip3: {{ client_priv3 }}
+
+  - name: add gluster nodes to inventory
+    blockinfile:
+      path: ./hosts
+      marker: "# {mark} GLUSTER LINODES"
+      block: |
+        [gluster_servers]
+        {{ gluster_ip1 }}
+        {{ gluster_ip2 }}
+        {{ gluster_ip3 }}
+
+  - name: add client nodes to inventory
+    blockinfile:
+      path: ./hosts
+      marker: "# {mark} CLIENT LINODES"
+      block: |
+        [client_servers]
+        {{ client_ip1 }}
+        {{ client_ip2 }}
+        {{ client_ip3 }}
+  
+  - name: add gluster nodes to in-memory inventory
+    add_host:
+      name: '{{ item }}'
+      groups: gluster_servers
+    loop:
+      - '{{ gluster_ip1 }}'
+      - '{{ gluster_ip2 }}'
+      - '{{ gluster_ip3 }}'
+
+  - name: add client nodes to in-memory inventory
+    add_host:
+      name: '{{ item }}'
+      groups: client_servers
+    loop:
+      - '{{ client_ip1 }}'
+      - '{{ client_ip2 }}'
+      - '{{ client_ip3 }}'
+
+  - name: wait for port 22 to become open
+    wait_for:
+      port: 22
+      host: '{{ item }}'
+      search_regex: OpenSSH
+      delay: 10
+    connection: local
+    loop:
+      - '{{ gluster_ip1 }}'
+      - '{{ gluster_ip2 }}'
+      - '{{ gluster_ip3 }}'
+      - '{{ client_ip3 }}'
+      - '{{ client_ip3 }}'
+      - '{{ client_ip3 }}'

@@ -1,0 +1,14 @@
+# roles/precheck/tasks
+
+- name: stat glusterd.vol
+  stat:
+    path: /etc/glusterfs/glusterd.vol
+  run_once: true
+  register: gluster_vol
+
+- name: exit if gluster volumes already exist
+  fail:
+    msg: GlusterFS volumes may already be present. Only use this for new deployments.
+  when: gluster_vol.stat.exists
+  run_once: true
+  delegate_to: "{{ groups['gluster_servers'][0] }}"
